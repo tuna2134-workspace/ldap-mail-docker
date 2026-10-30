@@ -1,0 +1,197 @@
+name: ldap-mail
+
+# ---------------------------------------------------------------------------
+# Shared environment for the two mail-facing services.
+# ---------------------------------------------------------------------------
+x-mail-env: &mail-env
+  TZ: ${TZ:-Asia/Tokyo}
+  MAIL_DOMAIN: ${MAIL_DOMAIN:?set MAIL_DOMAIN in .env}
+  MAIL_HOSTNAME: ${MAIL_HOSTNAME:?set MAIL_HOSTNAME in .env}
+  LDAP_BASE_DN: ${LDAP_BASE_DN:?set LDAP_BASE_DN in .env}
+  LDAP_ADMIN_DN: cn=admin,${LDAP_BASE_DN}
+  LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set LDAP_ADMIN_PASSWORD in .env}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # -------------------------------------------------------------------------
+  # OpenLDAP: users, multi-valued mail, mailForward
+  # -------------------------------------------------------------------------
+  ldap:
+    build: ./ldap
+    restart: unless-stopped
+    environment:
+      <<: *mail-env
+      LDAP_ORGANISATION: ${LDAP_ORGANISATION:-Example Inc.}
+      DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:?set DEMO_USER_PASSWORD in .env}
+    volumes:
+      - ldap-data:/var/lib/ldap-mail
+    networks:
+      - mailnet
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Postfix: SMTP, submission, LDAP virtual mailbox/alias, Rspamd milter
+  # -------------------------------------------------------------------------
+  postfix:
+    build:
+      context: .
+      dockerfile: postfix/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *mail-env
+    depends_on:
+      ldap:
+        condition: service_healthy
+      dovecot:
+        condition: service_healthy
+      rspamd:
+        condition: service_started
+    ports:
+      - "25:25"
+      - "587:587"
+    volumes:
+      - postfix-private:/var/spool/postfix/private
+      - certs:/etc/ssl/mail
+    networks:
+      - mailnet
+    healthcheck:
+      test: ["CMD-SHELL", "postfix status >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Dovecot: IMAP/IMAPS, LMTP for Postfix, Maildir, Sieve
+  # -------------------------------------------------------------------------
+  dovecot:
+    build:
+      context: .
+      dockerfile: dovecot/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *mail-env
+    depends_on:
+      ldap:
+        condition: service_healthy
+    ports:
+      - "143:143"
+      - "993:993"
+    volumes:
+      - maildata:/data
+      - postfix-private:/var/spool/postfix/private
+      - certs:/etc/ssl/mail
+    networks:
+      - mailnet
+    healthcheck:
+      test: ["CMD-SHELL", "doveadm service status >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Rspamd: milter spam filtering + DKIM signing
+  # -------------------------------------------------------------------------
+  rspamd:
+    build: ./rspamd
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+      MAIL_DOMAIN: ${MAIL_DOMAIN:?set MAIL_DOMAIN in .env}
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:?set MAIL_HOSTNAME in .env}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - rspamd-dkim:/var/lib/rspamd/dkim
+    networks:
+      - mailnet
+    healthcheck:
+      # The upstream image checks the controller (11334), which this stack
+      # intentionally disables.  A raw TCP connect to the milter port makes
+      # Rspamd log "abnormally closing milter connection", so only verify that
+      # the daemon process is alive; Postfix fails open if the milter is down.
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Redis: Rspamd Bayes statistics (persistent AOF)
+  # -------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - ""
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - mailnet
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # certbot: Let's Encrypt certificate for STARTTLS (HTTP-01, standalone)
+  # -------------------------------------------------------------------------
+  certbot:
+    build: ./certbot
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:?set MAIL_HOSTNAME in .env}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:?set CERTBOT_EMAIL in .env}
+      CERTBOT_ENABLED: ${CERTBOT_ENABLED:-1}
+      CERTBOT_STAGING: ${CERTBOT_STAGING:-0}
+    ports:
+      - "${CERTBOT_HTTP_PORT:-80}:80"
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certs:/certs
+    networks:
+      - mailnet
+    logging: *default-logging
+
+networks:
+  mailnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  ldap-data:
+  maildata:
+  postfix-private:
+  certs:
+  letsencrypt:
+  rspamd-dkim:
+  redis-data:

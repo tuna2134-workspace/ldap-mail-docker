@@ -1,0 +1,25 @@
+# ---------------------------------------------------------------------------
+# Local mail schema for this project.
+#
+# OID arc 1.3.6.1.4.1.32473 is reserved for documentation/examples
+# (RFC 5612).  Replace the suffix with your own enterprise OID before using
+# this schema outside a lab or example deployment.
+# ---------------------------------------------------------------------------
+
+# Additional recipient address(es) for a mailbox are simply extra values of
+# the standard "mail" attribute (RFC 4524).  The attribute below is the only
+# project-specific piece: it names the destination(s) used when an account
+# wants its mail forwarded instead of stored locally.
+attributetype ( 1.3.6.1.4.1.32473.1.1
+    NAME 'mailForward'
+    DESC 'Forwarding destination address(es) for this mail account'
+    EQUALITY caseIgnoreIA5Match
+    SUBSTR caseIgnoreIA5SubstringsMatch
+    SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 )
+
+objectclass ( 1.3.6.1.4.1.32473.1.2
+    NAME 'mailAccount'
+    DESC 'Auxiliary mail account object class'
+    SUP top
+    AUXILIARY
+    MAY ( mail $ mailForward ) )

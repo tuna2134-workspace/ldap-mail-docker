@@ -1,0 +1,38 @@
+# Rendered by /usr/local/bin/entrypoint.sh at container start.
+# The values in ${...} are substituted with envsubst; everything else is
+# literal OpenLDAP configuration.
+
+include /etc/ldap/schema/core.schema
+include /etc/ldap/schema/cosine.schema
+include /etc/ldap/schema/inetorgperson.schema
+include /etc/ldap/schema/mailaccount.schema
+
+pidfile /var/run/slapd/slapd.pid
+argsfile /var/run/slapd/slapd.args
+
+modulepath /usr/lib/ldap
+moduleload back_mdb
+
+database mdb
+maxsize 268435456
+suffix "${LDAP_BASE_DN}"
+rootdn "${LDAP_ADMIN_DN}"
+rootpw ${LDAP_ADMIN_HASH}
+directory /var/lib/ldap-mail
+
+# Recipient lookups are equality searches on these attributes.
+index objectClass eq
+index uid,mail,mailForward eq
+
+# Only the rootdn (used by Postfix and Dovecot) can read account data.
+# Anonymous clients may only perform a password bind so that Dovecot's
+# auth_bind mode works for the user's own DN.
+access to attrs=userPassword
+    by self write
+    by anonymous auth
+    by * none
+
+access to *
+    by self read
+    by users read
+    by * none

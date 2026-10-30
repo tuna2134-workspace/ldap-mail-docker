@@ -1,0 +1,8 @@
+# Build context for this image is the repository root.
+# Keep the Docker context small and never send secrets (or mail data) to the
+# builder.
+.git
+.env
+.tmp
+tests/out
+data

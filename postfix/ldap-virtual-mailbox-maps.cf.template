@@ -1,0 +1,14 @@
+# Rendered by entrypoint.sh.
+# Used by trivial-rewrite to prove that a recipient in $virtual_mailbox_domains
+# exists.  Any value of the user's LDAP mail attribute matches.
+server_host = ldap://ldap:389
+search_base = ou=people,${LDAP_BASE_DN}
+scope = sub
+query_filter = (&(objectClass=mailAccount)(mail=%s))
+result_attribute = mail
+result_format = %s
+bind = yes
+bind_dn = ${LDAP_ADMIN_DN}
+bind_pw = ${LDAP_ADMIN_PASSWORD}
+version = 3
+timeout = 10

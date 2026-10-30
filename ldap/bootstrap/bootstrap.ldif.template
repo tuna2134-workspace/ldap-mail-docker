@@ -1,0 +1,58 @@
+# Seeded on first start only.  To re-seed after editing:
+#   docker compose down -v && docker compose up -d
+#
+# Every mailbox is identified by uid.  The standard multi-valued "mail"
+# attribute lists ALL addresses that belong to the account; any of them is
+# accepted as a recipient or as an IMAP login and resolves to the same
+# mailbox (/data/maildir/<uid>).  mailForward, when present, sends the
+# message to that address instead of storing it.
+
+dn: ${LDAP_BASE_DN}
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+dc: ${LDAP_DC}
+o: ${LDAP_ORGANISATION}
+
+dn: ou=people,${LDAP_BASE_DN}
+objectClass: top
+objectClass: organizationalUnit
+ou: people
+
+dn: uid=jdoe,ou=people,${LDAP_BASE_DN}
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: mailAccount
+uid: jdoe
+cn: John Doe
+sn: Doe
+displayName: John Doe
+mail: jdoe@${MAIL_DOMAIN}
+mail: john.doe@${MAIL_DOMAIN}
+mail: j.doe@${MAIL_DOMAIN}
+userPassword: ${USER_PASSWORD_HASH}
+
+dn: uid=asmith,ou=people,${LDAP_BASE_DN}
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: mailAccount
+uid: asmith
+cn: Alice Smith
+sn: Smith
+displayName: Alice Smith
+mail: asmith@${MAIL_DOMAIN}
+mail: alice@${MAIL_DOMAIN}
+mailForward: jdoe@${MAIL_DOMAIN}
+userPassword: ${USER_PASSWORD_HASH}
+
+dn: uid=taro,ou=people,${LDAP_BASE_DN}
+objectClass: top
+objectClass: inetOrgPerson
+objectClass: mailAccount
+uid: taro
+cn: Taro Yamada
+sn: Yamada
+displayName: Taro Yamada
+mail: taro@${MAIL_DOMAIN}
+mail: taro.yamada@${MAIL_DOMAIN}
+userPassword: ${USER_PASSWORD_HASH}

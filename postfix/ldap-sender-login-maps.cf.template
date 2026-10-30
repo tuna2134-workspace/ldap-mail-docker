@@ -1,0 +1,15 @@
+# Rendered by entrypoint.sh.
+# Result: "<uid>, <mail>, <mail>, ..." for the LDAP entry that owns the
+# envelope sender.  Postfix accepts the sender if the authenticated SASL
+# username is one of those values.  This is how "send from the mail
+# attribute" is enforced: only addresses present in mail may be used.
+server_host = ldap://ldap:389
+search_base = ou=people,${LDAP_BASE_DN}
+scope = sub
+query_filter = (&(objectClass=mailAccount)(mail=%s))
+result_attribute = uid, mail
+bind = yes
+bind_dn = ${LDAP_ADMIN_DN}
+bind_pw = ${LDAP_ADMIN_PASSWORD}
+version = 3
+timeout = 10

@@ -1,0 +1,14 @@
+# Rendered by entrypoint.sh.
+# Recipient rewriting: if the LDAP account has mailForward, replace the
+# recipient with its value(s).  When mailForward is absent the lookup returns
+# no result, so Postfix keeps the original recipient and delivers locally.
+server_host = ldap://ldap:389
+search_base = ou=people,${LDAP_BASE_DN}
+scope = sub
+query_filter = (&(objectClass=mailAccount)(mail=%s))
+result_attribute = mailForward
+bind = yes
+bind_dn = ${LDAP_ADMIN_DN}
+bind_pw = ${LDAP_ADMIN_PASSWORD}
+version = 3
+timeout = 10

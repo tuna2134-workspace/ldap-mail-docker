@@ -1,0 +1,19 @@
+# Rendered by entrypoint.sh.
+# Canonicalize the envelope sender of mail owned by an LDAP account to the
+# account's primary address <uid>@<MAIL_DOMAIN>.  For example, sending as
+# j.doe@example.com (also listed in the user's mail attribute) becomes
+# jdoe@example.com in MAIL FROM / Return-Path.
+#
+# sender_canonical_classes is limited to envelope_sender in main.cf, so the
+# From: header is left alone and inbound DKIM signatures are not invalidated.
+server_host = ldap://ldap:389
+search_base = ou=people,${LDAP_BASE_DN}
+scope = sub
+query_filter = (&(objectClass=mailAccount)(mail=%s))
+result_attribute = uid
+result_format = %s@${MAIL_DOMAIN}
+bind = yes
+bind_dn = ${LDAP_ADMIN_DN}
+bind_pw = ${LDAP_ADMIN_PASSWORD}
+version = 3
+timeout = 10

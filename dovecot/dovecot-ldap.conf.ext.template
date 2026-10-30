@@ -1,0 +1,30 @@
+# Rendered by entrypoint.sh.
+# Dovecot connects with the admin/rootdn for searches and userdb lookups.
+# Password checks use auth_bind: Dovecot finds the DN with pass_filter and
+# then binds as that DN, so LDAP never stores a second copy of the password.
+
+uris = ldap://ldap:389
+dn = ${LDAP_ADMIN_DN}
+dnpass = ${LDAP_ADMIN_PASSWORD}
+base = ou=people,${LDAP_BASE_DN}
+scope = subtree
+ldap_version = 3
+auth_bind = yes
+
+# Accept login by any mail value, and also by the bare uid.
+pass_filter = (&(objectClass=mailAccount)(|(mail=%u)(uid=%u)))
+user_filter = (&(objectClass=mailAccount)(|(mail=%u)(uid=%u)))
+
+# Normalize every login to <uid>@<mail domain>.  Without this, Dovecot's
+# auth_bind reports the bare uid as the username (the SASL username Postfix
+# sees), which has no domain for Rspamd's DKIM policy and makes userdb lookups
+# by uid necessary.  A canonical address keeps logs and DKIM predictable.
+pass_attrs = =user=%{ldap:uid}@${MAIL_DOMAIN}
+
+# <uid> is the LDAP uid, not the login address.  That is what makes
+# jdoe@, john.doe@ and j.doe@ all resolve to /data/maildir/jdoe.
+user_attrs = =home=/data/maildir/%{ldap:uid}
+
+# Verify TLS is not needed inside the Compose network; set "tls = yes" and a
+# CA here if you later expose LDAP over an untrusted link.
+# tls = no

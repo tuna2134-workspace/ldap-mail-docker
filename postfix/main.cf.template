@@ -1,0 +1,105 @@
+# Rendered by /usr/local/bin/entrypoint.sh with envsubst.  Only the
+# placeholders listed in the entrypoint are substituted; $postfix variables
+# such as $myhostname and ${data_directory} are left untouched.
+
+compatibility_level = 3.6
+
+# ---------------------------------------------------------------------------
+# Identity
+# ---------------------------------------------------------------------------
+myhostname = ${MAIL_HOSTNAME}
+mydomain = ${MAIL_DOMAIN}
+myorigin = $mydomain
+mydestination =
+# Virtual-mailbox only: there is no local(8) delivery and no /etc/aliases.
+alias_maps =
+alias_database =
+inet_interfaces = all
+inet_protocols = ipv4
+mynetworks = 127.0.0.0/8
+# Other containers are NOT trusted: 172.16/12 traffic must authenticate or be
+# a known virtual recipient.
+
+# ---------------------------------------------------------------------------
+# Virtual mailbox + virtual alias, backed by OpenLDAP
+# ---------------------------------------------------------------------------
+# Any value of the LDAP "mail" attribute is a valid recipient for the user.
+# virtual_mailbox_maps only has to confirm that the address exists; the actual
+# Maildir write is done by Dovecot LMTP at /data/maildir/<uid>.
+virtual_mailbox_domains = ${MAIL_DOMAIN}
+virtual_mailbox_maps = ldap:/etc/postfix/ldap-virtual-mailbox-maps.cf
+virtual_alias_maps = ldap:/etc/postfix/ldap-virtual-alias-maps.cf
+virtual_transport = lmtp:unix:private/dovecot-lmtp
+# The mailbox location and uid/gid are decided by Dovecot's LDAP userdb.
+
+# ---------------------------------------------------------------------------
+# SMTP AUTH via Dovecot's auth socket (created on the shared private volume)
+# ---------------------------------------------------------------------------
+smtpd_sasl_type = dovecot
+smtpd_sasl_path = private/auth
+# AUTH is disabled on port 25 and enabled by the submission service below.
+smtpd_sasl_auth_enable = no
+smtpd_sasl_security_options = noanonymous
+smtpd_tls_auth_only = yes
+broken_sasl_auth_clients = yes
+
+# The envelope sender must be one of the authenticated user's LDAP mail
+# values.  smtpd_sender_login_maps returns "<uid>, <mail>, <mail>, ..." and
+# Postfix accepts the sender when the SASL username is in that list.
+smtpd_sender_login_maps = ldap:/etc/postfix/ldap-sender-login-maps.cf
+
+# Send as the account's primary address: any address in the user's mail
+# attribute is accepted (above) and then rewritten to <uid>@<MAIL_DOMAIN> in
+# the envelope.  Only the envelope is touched, so the From: header (and any
+# inbound DKIM signature) is preserved.
+sender_canonical_maps = ldap:/etc/postfix/ldap-sender-canonical-maps.cf
+sender_canonical_classes = envelope_sender
+
+# ---------------------------------------------------------------------------
+# Policy
+# ---------------------------------------------------------------------------
+smtpd_relay_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+smtpd_recipient_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+smtpd_sender_restrictions = permit_mynetworks, permit_sasl_authenticated
+smtpd_helo_required = yes
+disable_vrfy_command = yes
+smtpd_delay_reject = yes
+
+# ---------------------------------------------------------------------------
+# TLS / STARTTLS.  The files are managed by certbot; the entrypoint creates a
+# short-lived self-signed pair so Postfix can start before the first issuance.
+# ---------------------------------------------------------------------------
+smtpd_tls_cert_file = /etc/ssl/mail/fullchain.pem
+smtpd_tls_key_file = /etc/ssl/mail/privkey.pem
+smtpd_tls_security_level = may
+smtpd_tls_protocols = >=TLSv1.2
+smtpd_tls_mandatory_protocols = >=TLSv1.2
+smtpd_tls_loglevel = 1
+smtpd_tls_received_header = yes
+smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
+
+smtp_tls_security_level = may
+smtp_tls_CAfile = /etc/ssl/certs/ca-certificates.crt
+smtp_tls_loglevel = 1
+smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+tls_ssl_options = NO_COMPRESSION
+
+# ---------------------------------------------------------------------------
+# Rspamd milter (spam filtering + outbound DKIM signing)
+# ---------------------------------------------------------------------------
+smtpd_milters = inet:rspamd:11332
+non_smtpd_milters = $smtpd_milters
+milter_default_action = accept
+milter_protocol = 6
+milter_mail_macros = i {mail_addr} {client_addr} {client_name} {auth_authen}
+milter_content_timeout = 300s
+
+# ---------------------------------------------------------------------------
+# Limits / logging
+# ---------------------------------------------------------------------------
+message_size_limit = 26214400
+mailbox_size_limit = 0
+recipient_delimiter = +
+# Docker: log to stdout.  This requires "postfix start-fg" (see entrypoint).
+maillog_file = /dev/stdout
+maillog_file_prefixes = /dev/stdout, /var
